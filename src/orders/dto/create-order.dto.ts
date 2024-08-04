@@ -1,17 +1,10 @@
-import { OmitType } from '@nestjs/mapped-types';
-import { OrderStatus } from '@prisma/client';
-import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsEnum,
-  IsNumber,
-  IsOptional,
-  IsPositive,
-} from 'class-validator';
-import { Order } from '../entities';
+import { Order, OrderStatus } from '@prisma/client';
+import { IsEnum, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import { OrderStatusList } from '../enums';
 
-export class CreateOrderDto extends OmitType(Order, ['id'] as const) {
+export class CreateOrderDto
+  implements Omit<Order, 'id' | 'paid' | 'paidAt' | 'createdAt' | 'updatedAt'>
+{
   @IsNumber()
   @IsPositive()
   totalAmt: number;
@@ -25,9 +18,4 @@ export class CreateOrderDto extends OmitType(Order, ['id'] as const) {
   })
   @IsOptional()
   status: OrderStatus = OrderStatus.PENDING;
-
-  @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }) => [1, '1', true, 'true'].includes(value))
-  paid: boolean = false;
 }

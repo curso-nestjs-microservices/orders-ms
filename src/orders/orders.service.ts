@@ -1,25 +1,73 @@
 import { Order, PrismaClient } from '@prisma/client';
-import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
+import { PRODUCTS_MS } from 'src/config';
 import {
   ChangeOrderStatusDto,
   CreateOrderDto,
   PaginationOrderDto,
 } from './dto';
+import { ProductPatterns } from './enums';
+import { IOrder, IProduct } from './interfaces';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger(OrdersService.name);
+
+  constructor(
+    @Inject(PRODUCTS_MS) private readonly productsClient: ClientProxy,
+  ) {
+    super();
+  }
 
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Database connected!');
   }
 
-  create(createOrderDto: CreateOrderDto) {
-    return this.order.create({
-      data: createOrderDto,
-    });
+  async create(createOrderDto: CreateOrderDto) {
+    const productIds = createOrderDto.items.map((item) => item.productId);
+
+    try {
+      // * Validar que los productos existan
+      const products = await this._validateProducts({
+        ids: productIds,
+      });
+
+      // * Calcular totales
+      const { totalAmount, totalItems } = this._calculateTotals({
+        order: createOrderDto,
+        products: products,
+      });
+
+      // * Transacción en la DB
+      const order: IOrder = await this.order.create({
+        data: {
+          totalAmt: totalAmount,
+          totalItems: totalItems,
+          OrderItem: {
+            createMany: {
+              data: this._mapOrderCreationData({
+                order: createOrderDto,
+                products: products,
+              }),
+            },
+          },
+        },
+        include: { OrderItem: true },
+      });
+
+      return this._mapOrderCreationResp({ order, products });
+    } catch (error) {
+      throw new RpcException(error);
+    }
   }
 
   async findAll({ page, limit, status }: PaginationOrderDto) {
@@ -51,8 +99,9 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    const order = await this.order.findFirst({
+    const order: IOrder = await this.order.findFirst({
       where: { id },
+      include: { OrderItem: true },
     });
 
     if (!order) {
@@ -62,7 +111,12 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       });
     }
 
-    return order;
+    const products = await this._validateProducts({
+      ids: order.OrderItem.map((orderItem) => orderItem.productId),
+      includeDeleted: true,
+    });
+
+    return this._mapOrderCreationResp({ order, products });
   }
 
   async changeStatus({ id, status }: ChangeOrderStatusDto) {
@@ -76,5 +130,81 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       where: { id },
       data: { status },
     });
+  }
+
+  private _validateProducts({
+    ids,
+    includeDeleted = false,
+  }: {
+    ids: number[];
+    includeDeleted?: boolean;
+  }) {
+    return firstValueFrom(
+      this.productsClient.send<IProduct[]>(
+        { cmd: ProductPatterns.validateProducts },
+        { ids, ...(!includeDeleted && { enabled: true }) },
+      ),
+    );
+  }
+
+  private _calculateTotals({
+    order,
+    products,
+  }: {
+    order: CreateOrderDto;
+    products: IProduct[];
+  }) {
+    const totalAmount = order.items.reduce((_, orderItem) => {
+      const { price } = products.find(
+        (product) => product.id === orderItem.productId,
+      );
+
+      return price * orderItem.quantity;
+    }, 0);
+
+    const totalItems = order.items.reduce((acc, orderItem) => {
+      return acc + orderItem.quantity;
+    }, 0);
+
+    return { totalAmount, totalItems };
+  }
+
+  private _mapOrderCreationData({
+    order,
+    products,
+  }: {
+    order: CreateOrderDto;
+    products: IProduct[];
+  }) {
+    return order.items.map((orderItem) => {
+      const dbPrice = products.find(
+        (product) => product.id === orderItem.productId,
+      ).price;
+
+      return {
+        productId: orderItem.productId,
+        quantity: orderItem.quantity,
+        price: dbPrice,
+      };
+    });
+  }
+
+  private _mapOrderCreationResp({
+    order,
+    products,
+  }: {
+    order: IOrder;
+    products: IProduct[];
+  }) {
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map((orderItem) => ({
+        productId: orderItem.productId,
+        quantity: orderItem.quantity,
+        price: orderItem.price,
+        name: products.find((product) => product.id === orderItem.productId)
+          .name,
+      })),
+    };
   }
 }

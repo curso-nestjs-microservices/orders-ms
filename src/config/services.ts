@@ -1,1 +1,1 @@
-export const PRODUCTS_MS = 'PRODUCTS_MICROSERVICE';
+export const NATS_SERVICE = 'NATS_SERVICE';

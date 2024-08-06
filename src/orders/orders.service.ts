@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
-import { PRODUCTS_MS } from 'src/config';
+import { NATS_SERVICE } from 'src/config';
 import {
   ChangeOrderStatusDto,
   CreateOrderDto,
@@ -21,9 +21,7 @@ import { IOrder, IProduct } from './interfaces';
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(
-    @Inject(PRODUCTS_MS) private readonly productsClient: ClientProxy,
-  ) {
+  constructor(@Inject(NATS_SERVICE) private readonly client: ClientProxy) {
     super();
   }
 
@@ -140,7 +138,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     includeDeleted?: boolean;
   }) {
     return firstValueFrom(
-      this.productsClient.send<IProduct[]>(
+      this.client.send<IProduct[]>(
         { cmd: ProductPatterns.validateProducts },
         { ids, ...(!includeDeleted && { enabled: true }) },
       ),

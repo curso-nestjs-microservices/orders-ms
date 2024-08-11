@@ -1,4 +1,4 @@
-import { Order, PrismaClient } from '@prisma/client';
+import { Order, OrderStatus, PrismaClient } from '@prisma/client';
 import {
   HttpStatus,
   Inject,
@@ -13,8 +13,9 @@ import {
   ChangeOrderStatusDto,
   CreateOrderDto,
   PaginationOrderDto,
+  PaidOrderDto,
 } from './dto';
-import { ProductPatterns } from './enums';
+import { PaymentPatterns, ProductPatterns } from './enums';
 import { IOrder, IProduct } from './interfaces';
 
 @Injectable()
@@ -128,6 +129,44 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       where: { id },
       data: { status },
     });
+  }
+
+  async createPaymentSession(order: Required<IOrder>) {
+    const paymentSession = await firstValueFrom(
+      this.client.send(PaymentPatterns.createPaymentSession, {
+        orderId: order.id,
+        currency: 'usd',
+        items: order.OrderItem.map((item) => ({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+      }),
+    );
+
+    return paymentSession;
+  }
+
+  async handlePaidOrder(paidOrderDto: PaidOrderDto) {
+    this.logger.log({ paidOrderDto });
+    const updatedOrder = await this.order.update({
+      where: { id: paidOrderDto.orderId },
+      data: {
+        status: OrderStatus.PAID,
+        paid: true,
+        paidAt: new Date(),
+        stripeChargeId: paidOrderDto.stripeChargeId,
+
+        // Relation
+        OrderReceipt: {
+          create: {
+            receiptUrl: paidOrderDto.receiptUrl,
+          },
+        },
+      },
+    });
+
+    return updatedOrder;
   }
 
   private _validateProducts({

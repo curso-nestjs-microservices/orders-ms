@@ -1,15 +1,15 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
   entrypoint: 'bash'
-  args:
-    - -c
-    - echo $$ORDERS_DB_URL
+  args: ['-c', 'echo $$ORDERS_DB_URL']
+  secretEnv: ['ORDERS_DB_URL']
 
 - name: 'gcr.io/cloud-builders/docker'
   entrypoint: 'bash'
   args:
     - -c
     - docker build -t southamerica-west1-docker.pkg.dev/store-micro/store-images-registry/order-ms -f dockerfile.prod --platform=linux/amd64 --build-arg $$ORDERS_DB_URL .
+  secretEnv: ['ORDERS_DB_URL']
 
 - name: 'gcr.io/cloud-builders/docker'
   args:

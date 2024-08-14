@@ -7,9 +7,8 @@ RUN npm install
 
 # BUILD & TEST
 FROM node:21-alpine3.19 AS build
-ARG ORDERS_DB_URL=postgresql://postgres:123456@localhost:5432/orders-db?schema=public
+ARG ORDERS_DB_URL
 ENV DATABASE_URL=$ORDERS_DB_URL
-ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 WORKDIR /usr/src/app
 # Copy node_modules
 COPY --from=base /usr/src/app/node_modules ./node_modules

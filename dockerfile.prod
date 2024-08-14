@@ -9,6 +9,9 @@ RUN npm install
 FROM node:21-alpine3.19 AS build
 ARG ORDERS_DB_URL
 ENV DATABASE_URL=$ORDERS_DB_URL
+# Check vars
+RUN echo "DATABASE_URL ::: $ORDERS_DB_URL"
+
 WORKDIR /usr/src/app
 # Copy node_modules
 COPY --from=base /usr/src/app/node_modules ./node_modules
